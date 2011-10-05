@@ -5,8 +5,12 @@ class @Mercury.Region
     @type = 'region' unless @type
     Mercury.log("building #{@type}", @element, @options)
 
+    # Converts the format "foo[bar]" to ["foo[bar]", "foo", "bar"]
+    param_names = @element.attr('data-name').match(/([^\[\]]+)\[([^\]]+)\]/)
+
     @document = @window.document
-    @name = @element.attr('id')
+    @name = param_names[1]
+    @attribute = param_names[2] + "_mercury"
     @history = new Mercury.HistoryBuffer()
     @build()
     @bindEvents()
@@ -96,8 +100,10 @@ class @Mercury.Region
 
 
   serialize: ->
-    return {
+    object = {}
+    object[@attribute] = {
       type: @type
       value: @content(null, true)
       snippets: @snippets()
     }
+    return object

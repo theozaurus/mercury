@@ -174,5 +174,5 @@ class @Mercury.PageEditor
 
   serialize: ->
     serialized = {}
-    serialized[region.name] = region.serialize() for region in @regions
+    serialized[region.name] = jQuery.extend(serialized[region.name], region.serialize()) for region in @regions
     return serialized
