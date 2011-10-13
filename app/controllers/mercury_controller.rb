@@ -10,14 +10,14 @@ class MercuryController < ActionController::Base
   end
 
   def snippet_options
-    render :action => "/snippets/#{params[:name]}_options", :layout => false
+    render :action => "/snippets/#{params[:name]}/options", :layout => false
   end
 
   def snippet_preview
-    render :action => "/snippets/#{params[:name]}", :layout => false
+    render :action => "/snippets/#{params[:name]}/preview", :layout => false
   end
 
-  def post
+  def test_page
     render :json => params
   end
 

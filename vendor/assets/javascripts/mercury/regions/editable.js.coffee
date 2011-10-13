@@ -28,11 +28,14 @@ class @Mercury.Regions.Editable extends Mercury.Region
 
     # add the basic editor settings to the document (only once)
     unless @document.mercuryEditing
-      @document.execCommand('styleWithCSS', false, false)
-      @document.execCommand('insertBROnReturn', false, true)
-      @document.execCommand('enableInlineTableEditing', false, false)
-      @document.execCommand('enableObjectResizing', false, false)
       @document.mercuryEditing = true
+      try
+        @document.execCommand('styleWithCSS', false, false)
+        @document.execCommand('insertBROnReturn', false, true)
+        @document.execCommand('enableInlineTableEditing', false, false)
+        @document.execCommand('enableObjectResizing', false, false)
+      catch e
+        # intentionally do nothing if any of these fail, to broaden support for Opera
 
 
   bindEvents: ->
@@ -85,7 +88,7 @@ class @Mercury.Regions.Editable extends Mercury.Region
     # isn't handled (eg, putting the image where it was dropped,) so to allow the browser to do it's thing, and also do
     # our thing we have this little hack.  *sigh*
     # read: http://www.quirksmode.org/blog/archives/2009/09/the_html5_drag.html
-    @element.bind 'possible:drop', (event) =>
+    @element.bind 'possible:drop', =>
       return if @previewing
       if snippet = @element.find('img[data-snippet]').get(0)
         @focus()
@@ -99,13 +102,14 @@ class @Mercury.Regions.Editable extends Mercury.Region
     @element.bind 'paste', =>
       return if @previewing
       return unless Mercury.region == @
-      Mercury.changes = true
       if @specialContainer
         event.preventDefault()
         return
-      content = @content()
+      return if @pasting
+      Mercury.changes = true
+      content = @element.html().replace(/^\s+|\s+$/g, '')
       clearTimeout(@handlePasteTimeout)
-      @handlePasteTimeout = setTimeout((=> @handlePaste(content)), 100)
+      @handlePasteTimeout = setTimeout((=> @handlePaste(content)), 400)
 
     @element.focus =>
       return if @previewing
@@ -146,9 +150,9 @@ class @Mercury.Regions.Editable extends Mercury.Region
         when 13 # enter
           if jQuery.browser.webkit && @selection().commonAncestor().closest('li, ul', @element).length == 0
             event.preventDefault()
-            @document.execCommand('insertLineBreak', false, null)
-          else if @specialContainer
-            # mozilla: pressing enter in any elemeny besides a div handles strangely
+            @document.execCommand('insertParagraph', false, null)
+          else if @specialContainer || jQuery.browser.opera
+            # mozilla: pressing enter in any element besides a div handles strangely
             event.preventDefault()
             @document.execCommand('insertHTML', false, '<br/>')
 
@@ -321,6 +325,7 @@ class @Mercury.Regions.Editable extends Mercury.Region
 
 
   handlePaste: (prePasteContent) ->
+    @pasting = true
     prePasteContent = prePasteContent.replace(/^\<br\>/, '')
 
     # remove any regions that might have been pasted
@@ -351,47 +356,11 @@ class @Mercury.Regions.Editable extends Mercury.Region
 
       @document.execCommand('undo', false, null)
       @execCommand('insertHTML', {value: container.html()})
+    @pasting = false
 
 
   # Custom actions (eg. things that execCommand doesn't do, or doesn't do well)
   @actions: {
-#    bold: (selection) ->
-#      unless selection.collapsed
-#        @document.execCommand('bold', false, null)
-#      else
-##        selection.selectWordByCursor()
-##        @document.execCommand('bold', false, null)
-#
-#        selection.placeMarker()
-#        node = @element.find('.mercury-marker').get(0)
-#        prev = node.previousSibling
-#        selection.removeMarker()
-#        next = prev.nextSibling
-#        console.debug(prev, next)
-##        if prev.textContent[prev.textContent.length - 1] != ' ' &&
-
-
-#[some]| content
-# textContent = some, wholeText = some
-# textContent = '', wholeText = some
-#content |[some]
-#content [s|ome]
-#co|ntent [some]
-#|content [some]
-
-
-#
-#        console.debug(commonAncestor)
-#        beforeText = commonAncestor.textContent
-#        afterText = commonAncestor.wholeText.substring(commonAncestor.wholeText.lastIndexOf(beforeText) + beforeText.length, commonAncestor.wholeText.length)
-#        if beforeText && afterText && (beforeChar = beforeText[beforeText.length - 1]) != ' ' && (afterChar = afterText[0]) != ' '
-#          console.debug('bolding word', beforeChar, afterChar)
-#        else
-#          @document.execCommand('bold', false, null)
-#
-##          selection.selectWord()
-##      commonAncestor.wholeText, commonAncestor.textContent
-#      else
 
     insertRowBefore: -> Mercury.tableEditor.addRow('before')
 
@@ -498,18 +467,16 @@ class Mercury.Regions.Editable.Selection
     return unless jQuery.browser.webkit
     range = @context.createRange()
 
-    # todo: the \00 thing breaks when using uglifier, and is escapped to "0".. it's been fixed, but isn't available yet
-    # https://github.com/lautis/uglifier/issues/11
     if @range
       if @commonAncestor(true).closest('.mercury-snippet').length
-        lastChild = @context.createTextNode('\00') #\00
+        lastChild = @context.createTextNode('\00')
         element.appendChild(lastChild)
     else
       if element.lastChild && element.lastChild.nodeType == 3 && element.lastChild.textContent.replace(/^[\s+|\n+]|[\s+|\n+]$/, '') == ''
         lastChild = element.lastChild
-        element.lastChild.textContent = '\00' #\00
+        element.lastChild.textContent = '\00'
       else
-        lastChild = @context.createTextNode(' ') #\00
+        lastChild = @context.createTextNode('\00')
         element.appendChild(lastChild)
 
     if lastChild
@@ -582,7 +549,7 @@ class Mercury.Regions.Editable.Selection
     @selection.addRange(@range)
 
 
-  replace: (element) ->
+  replace: (element, collapse) ->
     element = element.get(0) if element.get
     element = jQuery(element, @context).get(0) if jQuery.type(element) == 'string'
 
@@ -590,3 +557,4 @@ class Mercury.Regions.Editable.Selection
     @range.insertNode(element)
     @range.selectNodeContents(element)
     @selection.addRange(@range)
+    @range.collapse(false) if collapse

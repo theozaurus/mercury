@@ -8,13 +8,13 @@ describe "Mercury.PageEditor", ->
     @pageEditor = null
     delete(@pageEditor)
     window.mercuryInstance = null
-    $(document).unbind('mercury:initialize:frame')
-    $(document).unbind('mercury:focus:frame')
-    $(document).unbind('mercury:focus:window')
-    $(document).unbind('mercury:toggle:interface')
-    $(document).unbind('mercury:action')
-    $(document).unbind('mousedown')
+    $(window).unbind('mercury:initialize:frame')
+    $(window).unbind('mercury:focus:frame')
+    $(window).unbind('mercury:focus:window')
+    $(window).unbind('mercury:toggle:interface')
+    $(window).unbind('mercury:action')
     $(window).unbind('resize')
+    $(document).unbind('mousedown')
 
   describe "constructor", ->
 
@@ -130,7 +130,13 @@ describe "Mercury.PageEditor", ->
     it "injects mercury namespace into the iframe", ->
       @finalizeInterfaceSpy.andCallFake(=>)
       @pageEditor.initializeFrame()
-      expect(@pageEditor.iframe.get(0).contentWindow.Mercury).toEqual(Mercury)
+      expect(@pageEditor.iframe.get(0).contentWindow.Mercury).toEqual(window.Mercury)
+
+    it "provides the iframe with History (history.js)", ->
+      @finalizeInterfaceSpy.andCallFake(=>)
+      window.History = {Adapter: 'foo'}
+      @pageEditor.initializeFrame()
+      expect(@pageEditor.iframe.get(0).contentWindow.History).toEqual(window.History)
 
     it "calls bindEvents", ->
       @finalizeInterfaceSpy.andCallFake(=>)
@@ -152,12 +158,36 @@ describe "Mercury.PageEditor", ->
       @pageEditor.initializeFrame()
       expect(@finalizeInterfaceSpy.callCount).toEqual(1)
 
-    it "fires the ready event", ->
+    it "fires the ready event (Mercury.trigger)", ->
       spy = spyOn(Mercury, 'trigger').andCallFake(=>)
       @finalizeInterfaceSpy.andCallFake(=>)
       @pageEditor.initializeFrame()
       expect(spy.callCount).toEqual(1)
       expect(spy.argsForCall[0]).toEqual(['ready'])
+
+    it "fires the ready event (jQuery.trigger)", ->
+      spy = spyOn(jQuery.fn, 'trigger').andCallFake(=>)
+      @finalizeInterfaceSpy.andCallFake(=>)
+      @pageEditor.initializeFrame()
+      expect(spy.callCount).toEqual(2)
+      expect(spy.argsForCall[0]).toEqual(['mercury:ready', undefined])
+
+    it "fires the ready event (Event.fire)", ->
+      @finalizeInterfaceSpy.andCallFake(=>)
+      iframeWindow = @pageEditor.iframe.get(0).contentWindow
+      iframeWindow.Event = {fire: ->}
+      spy = spyOn(iframeWindow.Event, 'fire').andCallFake(=>)
+      @pageEditor.initializeFrame()
+      expect(spy.callCount).toEqual(1)
+      expect(spy.argsForCall[0][1]).toEqual('mercury:ready')
+
+    it "calls onMercuryReady in the iframe", ->
+      @finalizeInterfaceSpy.andCallFake(=>)
+      iframeWindow = @pageEditor.iframe.get(0).contentWindow
+      iframeWindow.onMercuryReady = ->
+      spy = spyOn(iframeWindow, 'onMercuryReady').andCallFake(=>)
+      @pageEditor.initializeFrame()
+      expect(spy.callCount).toEqual(1)
 
     it "shows the iframe", ->
       @pageEditor.iframe.css({visibility: 'visible'})
@@ -486,7 +516,7 @@ describe "Mercury.PageEditor", ->
       expect(@pageEditor.beforeUnload()).toEqual(null)
 
 
-  describe "#save", ->
+  describe "#getRegionByName", ->
 
     beforeEach ->
       Mercury.PageEditor.prototype.initializeInterface = ->
@@ -494,69 +524,108 @@ describe "Mercury.PageEditor", ->
       @iframeSrcSpy = spyOn(Mercury.PageEditor.prototype, 'iframeSrc').andCallFake(=> '/foo/baz')
       @ajaxSpy = spyOn($, 'ajax')
 
-    it "makes an ajax request", ->
-      @ajaxSpy.andCallFake(=>)
-      @pageEditor.save()
-      expect(@ajaxSpy.callCount).toEqual(1)
+    it "returns the region if a match is found", ->
+      @pageEditor.regions = [{name: 'foo'}, {name: 'bar'}, {name: 'baz'}]
+      expect(@pageEditor.getRegionByName('foo')).toEqual(@pageEditor.regions[0])
+      expect(@pageEditor.getRegionByName('baz')).toEqual(@pageEditor.regions[2])
 
-    it "uses the save url passed in via options, the configured save url, or the iframe src", ->
-      @ajaxSpy.andCallFake(=>)
-      @pageEditor.saveUrl = '/foo/bar'
-      @pageEditor.save()
-      expect(@ajaxSpy.argsForCall[0][0]).toEqual('/foo/bar')
+    it "returns null if no match was found", ->
+      @pageEditor.regions = [{name: 'bar'}]
+      expect(@pageEditor.getRegionByName('foo')).toEqual(null)
 
-      @pageEditor.saveUrl = null
-      Mercury.saveURL = '/foo/bit'
-      @pageEditor.save()
-      expect(@ajaxSpy.argsForCall[1][0]).toEqual('/foo/bit')
 
-      @pageEditor.saveUrl = null
-      Mercury.saveURL = null
-      @pageEditor.save()
-      expect(@ajaxSpy.argsForCall[2][0]).toEqual('/foo/baz')
+  describe "#save", ->
 
-    it "serializes the data in json", ->
-      @ajaxSpy.andCallFake(=>)
-      Mercury.config.saveStyle = 'json'
-      spyOn(Mercury.PageEditor.prototype, 'serialize').andCallFake(=> {region1: 'region1'})
-      @pageEditor.save()
-      expect(@ajaxSpy.argsForCall[0][1]['data']).toEqual({content: '{"region1":"region1"}' })
-
-    it "can serialize as form values", ->
-      @ajaxSpy.andCallFake(=>)
-      @pageEditor.options.saveStyle = 'form'
-      spyOn(Mercury.PageEditor.prototype, 'serialize').andCallFake(=> {region1: 'region1'})
-      @pageEditor.save()
-      expect(@ajaxSpy.argsForCall[0][1]['data']).toEqual({content: {region1: 'region1'}})
-
-    it "sets headers by calling #saveHeaders", ->
-      @ajaxSpy.andCallFake(=>)
-      spyOn(Mercury.PageEditor.prototype, 'serialize').andCallFake(=> {region1: 'region1'})
-      spy = spyOn(Mercury.PageEditor.prototype, 'saveHeaders').andCallFake(=> {'X-CSRFToken': 'f00'})
-      @pageEditor.save()
-      expect(@ajaxSpy.argsForCall[0][1]['headers']).toEqual({'X-CSRFToken': 'f00'})
-
-    describe "on successful ajax request", ->
-
+    describe "POST", ->
       beforeEach ->
-        @ajaxSpy.andCallFake((url, options) => options.success('data') )
+        Mercury.PageEditor.prototype.initializeInterface = ->
+        @pageEditor = new Mercury.PageEditor('', {appendTo: $('#test')})
+        @iframeSrcSpy = spyOn(Mercury.PageEditor.prototype, 'iframeSrc').andCallFake(=> '/foo/baz')
+        @ajaxSpy = spyOn($, 'ajax')
 
-      it "sets changes back to false", ->
-        Mercury.changes = true
+      it "doesn't set the _method in the request data", ->
+        @ajaxSpy.andCallFake(=>)
+        spyOn(Mercury.PageEditor.prototype, 'serialize').andCallFake(=> {region1: 'region1'})
         @pageEditor.save()
-        expect(Mercury.changes).toEqual(false)
+        expect(@ajaxSpy.argsForCall[0][1]['data']['_method']).toEqual(undefined)
 
-    describe "on failed ajax request", ->
+      it "makes an ajax request", ->
+        @ajaxSpy.andCallFake(=>)
+        @pageEditor.save()
+        expect(@ajaxSpy.callCount).toEqual(1)
 
-      beforeEach ->
-        @ajaxSpy.andCallFake((url, options) => options.error() )
-
-      it "alerts with the url", ->
-        spy = spyOn(window, 'alert').andCallFake(=>)
+      it "uses the save url passed in via options, the configured save url, or the iframe src", ->
+        @ajaxSpy.andCallFake(=>)
         @pageEditor.saveUrl = '/foo/bar'
         @pageEditor.save()
-        expect(spy.callCount).toEqual(1)
-        expect(spy.argsForCall[0]).toEqual(['Mercury was unable to save to the url: /foo/bar'])
+        expect(@ajaxSpy.argsForCall[0][0]).toEqual('/foo/bar')
+
+        @pageEditor.saveUrl = null
+        Mercury.saveURL = '/foo/bit'
+        @pageEditor.save()
+        expect(@ajaxSpy.argsForCall[1][0]).toEqual('/foo/bit')
+
+        @pageEditor.saveUrl = null
+        Mercury.saveURL = null
+        @pageEditor.save()
+        expect(@ajaxSpy.argsForCall[2][0]).toEqual('/foo/baz')
+
+      it "serializes the data in json", ->
+        @ajaxSpy.andCallFake(=>)
+        Mercury.config.saveStyle = 'json'
+        spyOn(Mercury.PageEditor.prototype, 'serialize').andCallFake(=> {region1: 'region1'})
+        @pageEditor.save()
+        expect(@ajaxSpy.argsForCall[0][1]['data']).toEqual({content: '{"region1":"region1"}' })
+
+      it "can serialize as form values", ->
+        @ajaxSpy.andCallFake(=>)
+        @pageEditor.options.saveStyle = 'form'
+        spyOn(Mercury.PageEditor.prototype, 'serialize').andCallFake(=> {region1: 'region1'})
+        @pageEditor.save()
+        expect(@ajaxSpy.argsForCall[0][1]['data']).toEqual({content: {region1: 'region1'}})
+
+      it "sets headers by calling #saveHeaders", ->
+        @ajaxSpy.andCallFake(=>)
+        spyOn(Mercury.PageEditor.prototype, 'serialize').andCallFake(=> {region1: 'region1'})
+        spy = spyOn(Mercury.PageEditor.prototype, 'saveHeaders').andCallFake(=> {'X-CSRFToken': 'f00'})
+        @pageEditor.save()
+        expect(@ajaxSpy.argsForCall[0][1]['headers']).toEqual({'X-CSRFToken': 'f00'})
+
+      describe "on successful ajax request", ->
+
+        beforeEach ->
+          @ajaxSpy.andCallFake((url, options) => options.success('data') )
+
+        it "sets changes back to false", ->
+          Mercury.changes = true
+          @pageEditor.save()
+          expect(Mercury.changes).toEqual(false)
+
+      describe "on failed ajax request", ->
+
+        beforeEach ->
+          @ajaxSpy.andCallFake((url, options) => options.error() )
+
+        it "alerts with the url", ->
+          spy = spyOn(window, 'alert').andCallFake(=>)
+          @pageEditor.saveUrl = '/foo/bar'
+          @pageEditor.save()
+          expect(spy.callCount).toEqual(1)
+          expect(spy.argsForCall[0]).toEqual(['Mercury was unable to save to the url: /foo/bar'])
+
+    describe "PUT", ->
+
+      beforeEach ->
+        Mercury.PageEditor.prototype.initializeInterface = ->
+        @pageEditor = new Mercury.PageEditor('', {appendTo: $('#test'), saveMethod: 'PUT'})
+        @iframeSrcSpy = spyOn(Mercury.PageEditor.prototype, 'iframeSrc').andCallFake(=> '/foo/baz')
+        @ajaxSpy = spyOn($, 'ajax')
+
+      it "sets the _method in the request", ->
+        @ajaxSpy.andCallFake(=>)
+        spyOn(Mercury.PageEditor.prototype, 'serialize').andCallFake(=> {region1: 'region1'})
+        @pageEditor.save()
+        expect(@ajaxSpy.argsForCall[0][1]['data']['_method']).toEqual('PUT')
 
 
   describe "#serialize", ->

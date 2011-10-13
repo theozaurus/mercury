@@ -2,6 +2,7 @@ class @Mercury.PageEditor
 
   # options
   # saveStyle: 'form', or 'json' (defaults to json)
+  # saveMethod: 'POST', or 'PUT', create or update actions on save (defaults to POST)
   # visible: boolean, if the interface should start visible or not (defaults to true)
   constructor: (@saveUrl = null, @options = {}) ->
     throw "Mercury.PageEditor is unsupported in this client. Supported browsers are chrome 10+, firefix 4+, and safari 5+." unless Mercury.supported
@@ -18,7 +19,7 @@ class @Mercury.PageEditor
 
   initializeInterface: ->
     @focusableElement = jQuery('<input>', {type: 'text', style: 'position:absolute;opacity:0'}).appendTo(@options.appendTo ? 'body')
-    @iframe = jQuery('<iframe>', {class: 'mercury-iframe', seamless: 'true', frameborder: '0', src: 'about:blank', style: 'position:absolute;top:0;width:100%;visibility:hidden'})
+    @iframe = jQuery('<iframe>', {id: 'mercury_iframe', class: 'mercury-iframe', seamless: 'true', frameborder: '0', src: 'about:blank', style: 'position:absolute;top:0;width:100%;visibility:hidden'})
     @iframe.appendTo(jQuery(@options.appendTo).get(0) ? 'body')
 
     @iframe.load => @initializeFrame()
@@ -32,6 +33,7 @@ class @Mercury.PageEditor
     try
       return if @iframe.data('loaded')
       @iframe.data('loaded', true)
+      alert("Opera isn't a fully supported browser, your results may not be optimal.") if jQuery.browser.opera
       @document = jQuery(@iframe.get(0).contentWindow.document)
       jQuery("<style mercury-styles=\"true\">").html(Mercury.config.injectedStyles).appendTo(@document.find('head'))
 
@@ -41,13 +43,18 @@ class @Mercury.PageEditor
       # todo: look into `context` options for ajax as an alternative
       iframeWindow = @iframe.get(0).contentWindow
       jQuery.globalEval = (data) -> (iframeWindow.execScript || (data) -> iframeWindow["eval"].call(iframeWindow, data))(data) if (data && /\S/.test(data))
+
       iframeWindow.Mercury = Mercury
+      iframeWindow.History = History if window.History && History.Adapter
 
       @bindEvents()
       @resize()
       @initializeRegions()
       @finalizeInterface()
       Mercury.trigger('ready')
+      jQuery(iframeWindow).trigger('mercury:ready')
+      iframeWindow.Event.fire(iframeWindow, 'mercury:ready') if iframeWindow.Event && iframeWindow.Event.fire
+      iframeWindow.onMercuryReady() if iframeWindow.onMercuryReady
 
       @iframe.css({visibility: 'visible'})
     catch error
@@ -148,16 +155,23 @@ class @Mercury.PageEditor
     return null
 
 
+  getRegionByName: (id) ->
+    for region in @regions
+      return region if region.name == id
+    return null
+
+
   save: ->
     url = @saveUrl ? Mercury.saveURL ? @iframeSrc()
     data = @serialize()
     Mercury.log('saving', data)
     data = jQuery.toJSON(data) unless @options.saveStyle == 'form'
+    method = 'POST' if @options.saveMethod == 'POST'
     jQuery.ajax url, {
-      type: 'PUT'
-      headers: @saveHeaders()
+      type: method || 'PUT'
       contentType: 'application/json'
       dataType: 'json'
+      headers: @saveHeaders()
       data: data
       success: =>
         Mercury.changes = false

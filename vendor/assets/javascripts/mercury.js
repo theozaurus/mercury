@@ -23,7 +23,15 @@
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *
  *= require_self
+ *
+ * Add all requires for the support libraries that integrate nicely with Mercury Editor.
+ * require mercury/support/history
+ *
+ * Require Mercury Editor itself.
  *= require mercury/mercury
+ *
+ * Add all requires for plugins that extend or change the behavior of Mercury Editor.
+ * require mercury/plugins/save_as_xml/plugin.js
  */
 window.MercurySetup = {
 
@@ -55,9 +63,15 @@ window.MercurySetup = {
     //
     // When copying content using webkit, it embeds all the user defined styles (from the css files) into the html
     // style attributes directly.  When pasting this content into HTML5 contentEditable elements it leaves these
-    // intact.  This can be a desired feature, or an annoyance, so you can enable it or disable it here.  Keep in mind
-    // this will only change the behavior in webkit, as mozilla doesn't do this.
-    cleanStylesOnPaste: true,
+    // intact.  This can be a desired feature, or an annoyance, so you can enable it or disable it here.  This means
+    // that copying something from a webkit based browser and pasting it into something like firefox will also result in
+    // these extra style attributes.  Cleaning the styles out impacts performance when pasting, and because of browser
+    // restrictions on getting pasted content (which is stupid) we have to fall back to a less performant method off
+    // figuring out what was pasted.  This seems to cause issues if you try and paste several things in a row, which
+    // seems to happen a lot when people are testing the demo.  Because of this it's disabled by default, but is
+    // recommended if you're using webkit.
+    // Go signin and vote to change this: http://www.google.com/support/forum/p/Chrome/thread?tid=3399afd053d5a29c&hl=en
+    cleanStylesOnPaste: false,
 
 
     // ## Snippet Options and Preview
@@ -253,10 +267,13 @@ window.MercurySetup = {
     // example, you may prefer to add HR tags using an HR wrapped within a div with a classname (for styling).  You
     // can add your own complex behaviors here.
     //
-    // You can see how the behavior matches up directly with the button name.  It's also important to note that the
+    // You can see how the behavior matches up directly with the button names.  It's also important to note that the
     // callback functions are executed within the scope of the given region, so you have access to all it's methods.
     behaviors: {
-      horizontalRule: function(selection) { selection.replace('<hr/>') },
+      horizontalRule: function(selection) {
+        //selection.replace('<hr/>', true);
+        this.execCommand('insertHorizontalRule');
+      },
       htmlEditor: function() { Mercury.modal('/mercury/modals/htmleditor.html', { title: 'HTML Editor', fullHeight: true, handler: 'htmlEditor' }) }
       },
 
