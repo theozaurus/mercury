@@ -158,7 +158,7 @@ class @Mercury.PageEditor
       headers: @saveHeaders()
       contentType: 'application/json'
       dataType: 'json'
-      data: {content: data}
+      data: data
       success: =>
         Mercury.changes = false
       error: =>
